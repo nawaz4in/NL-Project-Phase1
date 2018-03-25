@@ -1,0 +1,105 @@
+trigger NL_Accounts_Trigger on Account (before delete, before insert, before update) {
+    
+    ID NLRecordType = Schema.SObjectType.Account.getRecordTypeInfosByName().get('NL Account').getRecordTypeId();
+    
+    if(Trigger.isInsert){
+        try{
+            //All new NL Accounts should have Jeroen Stokkink as their owner 
+            for(Account a: trigger.new){
+                if(a.RecordTypeID == NLRecordType)
+                {
+                    a.ownerID = System.label.NL_Sales_Default_User;
+                }
+                
+                //if the employee range doesn't correspond to the value of Employees field update the range
+                if(a.NumberOfEmployees <> null && getEquivalentEmployeeRange(a.NumberOfEmployees)<>a.Number_of_employees_range__c 
+                   && a.RecordTypeID == NLRecordType && getEquivalentEmployeeRange(a.NumberOfEmployees)<>'Error'){
+                    a.Number_of_employees_range__c = getEquivalentEmployeeRange(a.NumberOfEmployees);
+                }
+        	}	
+        }
+        catch(Exception e){
+            System.debug('Exception Occured during Insert--> '+e);
+        }
+    }
+    
+    if(Trigger.isUpdate){
+    	Map<id,List<Opportunity>> accOpps = new Map<id,List<Opportunity>>();
+		Map<id,List<Task>> accTasks = new Map<id,List<Task>>();
+        Map<Id,List<Event>> accEvents= new Map<id,List<Event>>();
+    	try{
+            //Get all accounts with open opps
+	    	for(Account a: [Select id, name, Active__c,(Select Id, Name, Description, StageName From Opportunities where StageName NOT in ('Stage 5: Won','Dead','Lost')) 
+                            	from Account where id in: trigger.new and RecordType.Name = 'NL Account']){
+	    		if(a.Active__c==true && a.opportunities.size() > 0){
+	    			accOpps.put(a.id,a.opportunities);
+	    		}
+	    	}
+            
+            //Get all accounts with open tasks
+            for(Account acc: [Select id, name, Active__c,(Select Id, subject, Status From Tasks where Status <> 'Completed') 
+                              from Account where id in: trigger.new and RecordType.Name = 'NL Account']){
+                if(acc.Active__c==true && acc.Tasks.size() > 0){
+                    accTasks.put(acc.id,acc.Tasks);
+                    //System.debug('Tasks --> '+acc.tasks);
+                    //SYstem.debug('Map --> '+accTasks);
+                }
+                                  
+            }
+            
+            //Get all accounts with open Events
+            for(Account acc: [Select id, name, Active__c,(Select Id, subject, StartDateTime, EndDateTime From Events where StartDateTime>=:System.Today()) 
+                              from Account where id in: trigger.new and RecordType.Name = 'NL Account']){
+                   if(acc.Active__c==true && acc.Events.size() > 0){
+                       accEvents.put(acc.id,acc.Events);
+                   }
+            }
+            
+	    	for(Account a: trigger.new){
+				//if the active checkbox is being changed to false for NL Accounts throw error                
+	    		if((accOpps.containsKey(a.id) || accTasks.containsKey(a.id) || accEvents.containsKey(a.id))
+					&& trigger.oldMap.get(a.id).active__c == True 
+                   	&& trigger.newMap.get(a.id).active__c == false 
+                   	&& a.RecordTypeID == NLRecordType){
+	    			a.addError(System.label.NL_Account_Error_Message);
+                   }
+                //if the employee range doesn't correspond to the value of Employees field update the range
+                if(a.NumberOfEmployees <> null && getEquivalentEmployeeRange(a.NumberOfEmployees)<>a.Number_of_employees_range__c 
+                   && a.RecordTypeID == NLRecordType && getEquivalentEmployeeRange(a.NumberOfEmployees)<>'Error'){
+                    a.Number_of_employees_range__c = getEquivalentEmployeeRange(a.NumberOfEmployees);
+                }
+	    	}
+    	}
+    	catch(Exception e){
+    		System.debug('Exception Occured during Update--> '+e);
+    	}
+    }
+    
+    private String getEquivalentEmployeeRange(Integer empNo){
+        String empRange ='';
+        //No select statement in apex :(
+        if(empNo>0 && empNo<=50){
+            empRange='1-50';
+        }else if(empNo>50 && empNo<=100){
+            empRange='51-100';
+        }else if(empNo>100 && empNo<=200){
+            empRange='101-200';
+        }else if(empNo>200 && empNo<=500){
+            empRange='201-500';
+        }else if(empNo>500 && empNo<=750){
+            empRange='501-750';
+        }else if(empNo>750 && empNo<=1000){
+            empRange='751-1000';
+        }else if(empNo>1000 && empNo<=5000){
+            empRange='1001-5000';
+        }else if(empNo>5000 && empNo<=10000){
+            empRange='5001-10000';
+        }else if(empNo>10000){
+            empRange='>10000';
+        }else {empRange = 'Error';}
+        
+        return empRange;
+    }
+    
+    
+}
