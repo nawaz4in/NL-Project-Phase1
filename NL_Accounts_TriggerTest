@@ -1,0 +1,52 @@
+@isTest(seeAllData = true)
+public class NL_Accounts_TriggerTest {
+    static testMethod void testNLAccounts(){
+		Id NLAccountRecordType, accOwnerID; 
+
+        NLAccountRecordType = Schema.SObjectType.Account.getRecordTypeInfosByName().get('NL Account').getRecordTypeId();
+
+        Test.startTest();
+        
+        Account acc = new Account(Name='NL Test', RecordTypeID=NLAccountRecordType, Active__c=true, NumberOfEmployees = 30);
+		insert acc;
+                
+        Integer[] empNoArr = new Integer[]{0,51,101,201,501,751,1001,5001,10001};
+       	
+        for(integer i=0; i<empNoArr.size();i++){
+            acc.NumberOfEmployees = empNoArr[i];
+            update acc;
+         }
+        
+        
+        
+        
+        
+        Opportunity opp = new Opportunity(accountID=acc.id, name='NL Opportunity Test', stageName='Stage 2: Quote');
+        opp.CloseDate = date.newinstance(2020, 12, 31);
+        insert opp;
+        
+        Task T1 = new Task(whatid=acc.id,subject='Test task NL', status ='En cours');
+        Task T2 = new Task(whatid=opp.id,subject='Test task NL from Opp', status ='En cours');
+        
+        insert T1; insert T2;  
+        
+        Event E1 = new Event(subject='NL Account Event', StartDateTime = System.today().addDays(1), 
+                             EndDateTime = System.today().addDays(2), WhatId = acc.id);
+      	Insert E1;
+        
+        acc.active__c=false;
+        try{
+			update acc;
+        }catch (Exception e){
+            System.assertEquals(true, e.getMessage().contains(System.label.NL_Account_Error_Message));
+        }
+        
+        for(Account account: [Select OwnerID from Account where id =: acc.id limit 1]){
+            accOwnerID = account.OwnerID;
+        }
+               
+        System.assertEquals(System.label.NL_Sales_Default_User,accOwnerID);
+        
+        Test.stopTest();
+    }
+}
