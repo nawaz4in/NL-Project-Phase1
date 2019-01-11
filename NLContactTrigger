@@ -1,6 +1,7 @@
 trigger NLContactTrigger on Contact (before insert, before Update) {
     /*
      * Rationale: To display error if there is already a NL contact marked as Primary Sales Contact of the associated NL account
+     Added PE testing
     */
     try{
         Map<id,Contact> conMap = new Map<id,Contact>();
