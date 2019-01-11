@@ -1,0 +1,73 @@
+trigger NLContactTrigger on Contact (before insert, before Update) {
+    /*
+     * Rationale: To display error if there is already a NL contact marked as Primary Sales Contact of the associated NL account
+    */
+    try{
+        Map<id,Contact> conMap = new Map<id,Contact>();
+        Map<id,List<Contact>> accConMap = new Map<id,List<Contact>>();
+        ID NLRecordType = Schema.SObjectType.Contact.getRecordTypeInfosByName().get('NL Contact').getRecordTypeId();
+        
+        //Put all the contacts in conMap if they're NL Account
+        for(Contact con: trigger.new){
+            System.debug('NLRecordType '+NLRecordType);
+            if(con.RecordTypeId==NLRecordType && NLRecordType <> null){
+                conMap.put(con.id,con);
+                //System.debug('conMap -- '+conMap);
+            } 
+        }
+        
+        //Put all the NL Accounts with their List of contacts which are Primary Sales Contact in accConMap
+        if(!conmap.isEmpty()){
+            for(Account acc: [Select id, name,RecordType.Name, (Select id, name, Type_of_Contact_NL__c from Contacts where Type_of_Contact_NL__c='Primary Sales Contact' and Active__c = true) from Account 
+                                where id in (Select accountid from Contact where id in:conMap.keySet()) and RecordType.Name = 'NL Account' and Active__c = true]){
+                if(acc.contacts.size()>0){ 
+                    accConMap.put(acc.id,acc.contacts);
+                    system.debug('accConMap -- '+accConMap);
+                }
+            }
+        }
+        
+        //If the contact is being inserted/updated as Primary Sales Contact when there is already a contact for the NL Account
+        //throw error with the name of the existing Primary Sales Contact. Also the error should not be thrown if the contact in 
+        //question is indeed the Primary Sales Contact that was retreived above in accConMap.       
+        if(!conMap.isEmpty()){
+            String contactWithPrimaryType = '';
+            Boolean flag = false;
+            for(Contact con: conMap.values()){
+                if(accConMap.containsKey(con.AccountId)){
+                    for(List<Contact> conList: accConMap.values()){
+                        for(Integer i=0;i<conList.size();i++){
+                            if(conList[i].id <> con.id){
+                                //System.debug('conList Size: '+conList.size()+' in if block');
+                                contactWithPrimaryType += conList[i].name+'; ';
+                                flag = true;
+                            }   
+                        }     
+                    }
+                    if(flag && con.Type_of_Contact_NL__c == 'Primary Sales Contact'){
+                        con.addError(System.label.NL_Contact_Error_Message_for_Primary+' '+contactWithPrimaryType);
+                    }  
+                }
+            }
+        }
+        
+        //Triggering platform event
+        if(Trigger.isUpdate){
+            List<Contact__e> pe_conList = new List<Contact__e>();
+           
+            for(integer i = 0; i< trigger.new.size(); i++){
+                if(trigger.new[i].firstName <> trigger.old[i].firstName){
+                    Contact__e con =  new Contact__e(Contact_Name__c = trigger.new[i].firstName, CreatedDate_withMillisecond_GMT__c = DateTime.now()+'.'+DateTime.now().millisecondGMT(), Millisecond__c = DateTime.now().millisecondGMT(), Custom_created_date__c = DateTime.now(), getTime__c = DateTime.now().getTime());
+                    pe_conList.add(con);
+                    System.debug(con);
+                }
+                
+            }
+            EventBus.publish(pe_conList);	    
+        }
+        
+        
+    }catch (Exception e){
+        System.debug('Exception occured in NLContactTrigger - '+e.getStackTraceString());
+    }
+}
